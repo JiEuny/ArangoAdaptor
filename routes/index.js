@@ -7,6 +7,59 @@ var arangojs = require("arangojs");
 var db = new arangojs.Database();
 const aql = arangojs.aql;
 
+var http = require('http');
+var options = {
+  hostname: 'localhost',
+  port: '12345'
+};
+
+// when get a json-ld data
+function handleResponse(res) {
+  let body = [];
+  res.on('data', function (chunk) {
+    body += chunk;
+  });
+  res.on('end', function () {
+    body = JSON.parse(body);
+    // console.log(body);
+
+    // for (const key of Object.keys(body)) {
+    //   console.log('ta: ', key);
+    //   console.log('data: ', body[key]);
+    // }
+
+    //------------------------ store a entity at entityColl ----------------------------------
+    db.query(aql`
+      INSERT ${body} INTO 'entityColl'
+      RETURN NEW._key
+    `).then(function(cursor) {
+      // cursor is a cursor for the query result
+      let entityID = cursor._result;
+      console.log(entityID);
+
+      for (const key of Object.keys(body)) {
+        if(body[key].type == "Property") {
+          body[key].id = key;
+          // console.log(body[key]);
+
+          // --------------------------------- store properties at propertyColl ------------------------
+          db.query(aql`INSERT ${body[key]} INTO 'propertyColl' RETURN NEW._key`)
+              .then(function (cursor) {
+                let propertyID = cursor._result;
+                console.log(propertyID);
+              })
+        }
+      }
+    });
+  })
+}
+
+http.request(options, function (res) {
+  handleResponse(res);
+})
+    .end();
+
+
 db.useDatabase("_system");
 db.useBasicAuth("root", "0000");
 
@@ -25,13 +78,8 @@ FOR ed IN patientEdge
 `).then(function(cursor) {
   // cursor is a cursor for the query result
 
-  console.log(cursor._result[0]);
+  // console.log(cursor._result[0]);
 });
-
-// // Old-school JS with explicit bindVars:
-// db.query(`FOR ed IN patientEdge\n        FILTER ed._from == \"patientJSON/615355\"\n        LET edge = ed._id\n\n        FOR rel IN patientEdge\n            FILTER rel._from == edge\n\n       RETURN rel`, {
-//   active: true
-// })
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
